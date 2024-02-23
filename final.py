@@ -20,6 +20,7 @@ def convert_pdf_to_text(file):
     codec = 'utf-8'
     laparams = LAParams()
     device = TextConverter(rsrcmgr, retstr, codec=codec, laparams=laparams)
+    page_no = 1
 
     interpreter = PDFPageInterpreter(rsrcmgr, device)
     password = ""
@@ -33,8 +34,10 @@ def convert_pdf_to_text(file):
     signee = None
 
     for page in PDFPage.get_pages(file, pagenos, maxpages=maxpages, password=password, caching=caching, check_extractable=True):
+        retstr.write(f'Page {page_no}: ')
         interpreter.process_page(page)
         text = retstr.getvalue()
+        page_no += 1
 
         if not initial_date:
             initial_date = extract_date(text)
@@ -51,8 +54,8 @@ def convert_pdf_to_text(file):
             signee = match_signee.group(1)
 
     device.close()
-    text = retstr.getvalue()
     retstr.close()
+    text = text.replace('\n', ' ')
 
     return {
         "text": text,
@@ -119,13 +122,36 @@ async def generate_contract_summary(file: UploadFile = File(...)):
     if match:
         signee = match.group(1)
 
+    # Remove newlines from generated text
+    
+    
+    generated_text = generated_text.replace('\n', ' ')
+
     return {
         "generated_text": generated_text,
+        "pdf_text": pdf_text,
         "initial_date": initial_date,
         "expiry_date": expiry_date,
         "contract_owner": contract_owner,
         "signee": signee
     }
+
+
+@app.post("/chat/")
+async def chat_with_model(input_text: str, pdf_text: str):
+    if not input_text:
+        raise HTTPException(status_code=400, detail="Input text is required")
+
+    if not pdf_text:
+        raise HTTPException(status_code=400, detail="PDF text is required")
+
+    chat=model.start_chat(history=[])
+    response = chat.send_message(['refer the contract and respond minimum words: '+input_text, pdf_text])
+
+    reply=response.text
+    reply =reply.replace('\n', ' ')
+
+    return {"response_text": reply}
 
 if __name__ == "__main__":
     import uvicorn
